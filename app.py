@@ -18,6 +18,8 @@ XAI_URL = "https://api.x.ai/v1/chat/completions"
 KNOWN = Path(__file__).with_name("known_phones.txt")
 SEEN = Path("/tmp/katty_seen.txt")
 HOURS_IMG = Path(__file__).with_name("hours.jpg")
+INTRO_IMG = Path(__file__).with_name("intro_prices.png")
+LOYALTY_IMG = Path(__file__).with_name("loyalty.jpg")
 SUPPORT = "972524864703@c.us"
 
 WELCOME = """היי מותק 
@@ -36,7 +38,7 @@ SYSTEM = """את קטיה, בת 35, אוקראינית, בבאר שבע. כות�
 
 כללים קשיחים:
 - פגישה ראשונה רק חצי שעה, 400 שקל, מזומן במקום. שעה רק מביקור שני ורק אם הוא שאל. שעתיים ומעלה — אף פעם.
-- הנחה אין. אם מבקש זול או כותב סכום אחר: לא. 10 דקות 250, 15 דקות 300. וזהו.
+- הנחה אין. אם מבקש זול: שלחי פלייר מחירי היכרות (10 דק 250 / 15 דק 300) ותגידי "הנחה אין, אבל יש מחיר היכרות". אם כבר היה — אפשר להציע חבילה 4+1 או 3+1.
 - שעות: 09:00–22:00 כל יום כולל שבת. לילה אין.
 - מקום: באר שבע, שכונת דרום, צמוד לעיר העתיקה. כתובת מדויקת רק כשהוא יוצא / בדרך. אחרת: כתובת מדויקת 40 דק לפני.
 - רק אחד. אין קבוצות, אין שלישיות.
@@ -102,22 +104,33 @@ def send(chat_id: str, text: str) -> None:
         pass
 
 
-def send_hours(chat_id: str):
-    caption = "עובדים מ-9:00 עד 22:00"
-    time.sleep(1.5)
-    if not HOURS_IMG.exists():
-        send(chat_id, caption)
+def send_file(chat_id: str, path: Path, caption: str = ""):
+    time.sleep(1.3)
+    if not path.exists():
+        if caption:
+            send(chat_id, caption)
         return
     try:
         url = f"{GREEN_BASE}/waInstance{GREEN_ID}/sendFileByUpload/{GREEN_TOKEN}"
-        with HOURS_IMG.open("rb") as f:
-            files = {"file": ("hours.jpg", f, "image/jpeg")}
+        with path.open("rb") as f:
+            files = {"file": (path.name, f, "image/jpeg" if path.suffix.lower() in (".jpg", ".jpeg") else "image/png")}
             data = {"chatId": chat_id, "caption": caption}
             r = requests.post(url, data=data, files=files, timeout=30)
-            if not r.ok:
+            if not r.ok and caption:
                 send(chat_id, caption)
     except Exception:
-        send(chat_id, caption)
+        if caption:
+            send(chat_id, caption)
+
+
+def wants_discount(text: str) -> bool:
+    t = (text or "").lower()
+    keys = ("הנחה", "זול", "תזיל", "פחות", "скидк", "дешев", "дешевле", "дешёв", "discount", "cheaper")
+    return any(k in t for k in keys)
+
+
+def send_hours(chat_id: str):
+    send_file(chat_id, HOURS_IMG, "עובדת מ-9:00 עד 22:00")
 
 
 def history(chat_id: str) -> str:
@@ -185,7 +198,12 @@ async def webhook(req: Request):
         return {"ok": True, "muted": True}
 
     if is_night():
-        send_hours(sender)
+        if already(phone):
+            send_hours(sender)
+        else:
+            send(sender, WELCOME)
+            send_hours(sender)
+            mark_seen(phone)
         return {"ok": True, "night": True}
 
     msg = body.get("messageData") or {}
@@ -209,6 +227,12 @@ async def webhook(req: Request):
         send(SUPPORT, f"Бот требует поддержки. Чат {phone}")
         MUTED.add(phone)
         return {"ok": True, "support": True}
+
+    if wants_discount(text):
+        send_file(sender, INTRO_IMG, "הנחה אין מותק. יש מחיר היכרות: 10 דק 250 / 15 דק 300")
+        send_file(sender, LOYALTY_IMG, "ואם בא לך קבוע — יש חבילה: 4+1 או 3+1 (Private Month)")
+        mark_seen(phone)
+        return {"ok": True, "discount": True}
 
     reply = ask_grok(hist, text)
     if reply:
