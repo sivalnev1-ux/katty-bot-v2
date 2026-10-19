@@ -237,9 +237,10 @@ async def webhook(req: Request):
 
     hist = history(sender)
     low = (text + " " + hist).lower()
-    if any(w in low for w in ("יציאה", "לצאת", "выезд", "ко мне", "outcall", "не понял", "לא מבין", "???")):
+    if any(w in low for w in ("יציאה", "לצאת", "выезд", "ко мне", "outcall", "не понял", "לא מבין", "???",
+                               "שניים", "שלושה", "זוג", "חברים", "יחד", "двоем", "вдвоем", "троих", "тройнич", "group", "together", "пара")):
         send(sender, "רגע, בודקת.")
-        send(SUPPORT, f"Бот требует поддержки. Чат {phone}")
+        send(SUPPORT, f"⚠️ Требует внимания. Чат {phone}\nТекст: {text[:100]}")
         MUTED.add(phone)
         return {"ok": True, "support": True}
 
