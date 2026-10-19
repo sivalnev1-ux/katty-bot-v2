@@ -17,6 +17,7 @@ XAI_URL = "https://api.x.ai/v1/chat/completions"
 
 KNOWN = Path(__file__).with_name("known_phones.txt")
 SEEN = Path("/tmp/katty_seen.txt")
+NIGHT_SENT = Path("/tmp/katty_night_sent.txt")
 HOURS_IMG = Path(__file__).with_name("hours.jpg")
 INTRO_IMG = Path(__file__).with_name("intro_prices.png")
 LOYALTY_IMG = Path(__file__).with_name("loyalty.jpg")
@@ -81,6 +82,18 @@ def mark_seen(phone: str) -> None:
     KNOWN_PHONES.add(phone)
 
 
+def night_already(phone: str) -> bool:
+    if not NIGHT_SENT.exists():
+        return False
+    return phone in {x.strip() for x in NIGHT_SENT.read_text(encoding="utf-8").splitlines() if x.strip()}
+
+
+def mark_night(phone: str) -> None:
+    NIGHT_SENT.parent.mkdir(parents=True, exist_ok=True)
+    with NIGHT_SENT.open("a", encoding="utf-8") as f:
+        f.write(phone + "\n")
+
+
 def bot_on() -> bool:
     try:
         r = requests.get(f"{DESK}/api/board", timeout=8)
@@ -130,7 +143,7 @@ def wants_discount(text: str) -> bool:
 
 
 def send_hours(chat_id: str):
-    send_file(chat_id, HOURS_IMG, "עובדת מ-9:00 עד 22:00")
+    send_file(chat_id, HOURS_IMG, "כרגע לא עובדת. שעות העבודה שלי: 9:00–22:00. תכתוב לי בשעות האלה, בבקשה.")
 
 
 def history(chat_id: str) -> str:
@@ -198,12 +211,14 @@ async def webhook(req: Request):
         return {"ok": True, "muted": True}
 
     if is_night():
-        if already(phone):
-            send_hours(sender)
-        else:
-            send(sender, WELCOME)
-            send_hours(sender)
-            mark_seen(phone)
+        if not night_already(phone):
+            if already(phone):
+                send_hours(sender)
+            else:
+                send(sender, WELCOME)
+                send_hours(sender)
+                mark_seen(phone)
+            mark_night(phone)
         return {"ok": True, "night": True}
 
     msg = body.get("messageData") or {}
