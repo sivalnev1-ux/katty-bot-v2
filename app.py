@@ -19,6 +19,8 @@ KNOWN = Path(__file__).with_name("known_phones.txt")
 SEEN = Path("/tmp/katty_seen.txt")
 NIGHT_SENT = Path("/tmp/katty_night_sent.txt")
 HOURS_IMG = Path(__file__).with_name("hours.jpg")
+BACK_IMG = Path(__file__).with_name("back_thursday.jpg")
+BACK_SENT = Path(__file__).parent / "data" / "back_sent.txt"
 INTRO_IMG = Path(__file__).with_name("intro_prices.png")
 LOYALTY_IMG = Path(__file__).with_name("loyalty.jpg")
 SUPPORT = "972524864703@c.us"
@@ -84,15 +86,15 @@ def mark_seen(phone: str) -> None:
     KNOWN_PHONES.add(phone)
 
 
-def night_already(phone: str) -> bool:
-    if not NIGHT_SENT.exists():
+def back_already(phone: str) -> bool:
+    if not BACK_SENT.exists():
         return False
-    return phone in {x.strip() for x in NIGHT_SENT.read_text(encoding="utf-8").splitlines() if x.strip()}
+    return phone in {x.strip() for x in BACK_SENT.read_text(encoding="utf-8").splitlines() if x.strip()}
 
 
-def mark_night(phone: str) -> None:
-    NIGHT_SENT.parent.mkdir(parents=True, exist_ok=True)
-    with NIGHT_SENT.open("a", encoding="utf-8") as f:
+def mark_back(phone: str) -> None:
+    BACK_SENT.parent.mkdir(parents=True, exist_ok=True)
+    with BACK_SENT.open("a", encoding="utf-8") as f:
         f.write(phone + "\n")
 
 
@@ -198,44 +200,13 @@ def health():
 
 
 def process_message(sender: str, phone: str, text: str):
-    if is_night():
-        if not night_already(phone):
-            if already(phone):
-                send_hours(sender)
-            else:
-                send(sender, WELCOME)
-                send_hours(sender)
-                mark_seen(phone)
-            mark_night(phone)
+    if back_already(phone):
         return
-
-    if not text.strip():
-        return
-
     if not already(phone):
         send(sender, WELCOME)
         mark_seen(phone)
-        return
-
-    hist = history(sender)
-    low = text.lower()
-    if any(w in low for w in ("יציאה", "לצאת", "выезд", "ко мне", "outcall", "не понял", "לא מבין", "???",
-                               "שניים", "שלושה", "זוג", "חברים", "יחד", "двоем", "вдвоем", "троих", "тройнич", "group", "together", "пара")):
-        send(sender, "רגע")
-        send(SUPPORT, f"⚠️ Требует внимания. Чат {phone}\nТекст: {text[:100]}")
-        MUTED.add(phone)
-        return
-
-    if wants_discount(text):
-        send_file(sender, INTRO_IMG, "הנחה אין מותק. יש מחיר היכרות: 10 דק 250 / 15 דק 300")
-        send_file(sender, LOYALTY_IMG, "ואם בא לך קבוע — יש חבילה: 4+1 או 3+1 (Private Month)")
-        mark_seen(phone)
-        return
-
-    reply = ask_grok(hist, text)
-    if reply:
-        send(sender, reply)
-    mark_seen(phone)
+    send_file(sender, BACK_IMG, "")
+    mark_back(phone)
 
 
 @app.post("/webhook")
