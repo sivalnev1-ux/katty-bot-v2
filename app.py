@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import requests
-from fastapi import FastAPI, Request
+from fastapi import BackgroundTasks
 
 GREEN_BASE = os.environ.get("GREEN_BASE", "https://7107.api.greenapi.com")
 GREEN_ID = os.environ.get("GREEN_ID", "710722744965")
@@ -197,8 +197,49 @@ def health():
     return {"ok": True, "known": len(KNOWN_PHONES), "grok": bool(XAI_KEY)}
 
 
+def process_message(sender: str, phone: str, text: str):
+    if is_night():
+        if not night_already(phone):
+            if already(phone):
+                send_hours(sender)
+            else:
+                send(sender, WELCOME)
+                send_hours(sender)
+                mark_seen(phone)
+            mark_night(phone)
+        return
+
+    if not text.strip():
+        return
+
+    if not already(phone):
+        send(sender, WELCOME)
+        mark_seen(phone)
+        return
+
+    hist = history(sender)
+    low = text.lower()
+    if any(w in low for w in ("יציאה", "לצאת", "выезд", "ко мне", "outcall", "не понял", "לא מבין", "???",
+                               "שניים", "שלושה", "זוג", "חברים", "יחד", "двоем", "вдвоем", "троих", "тройнич", "group", "together", "пара")):
+        send(sender, "רגע")
+        send(SUPPORT, f"⚠️ Требует внимания. Чат {phone}\nТекст: {text[:100]}")
+        MUTED.add(phone)
+        return
+
+    if wants_discount(text):
+        send_file(sender, INTRO_IMG, "הנחה אין מותק. יש מחיר היכרות: 10 דק 250 / 15 דק 300")
+        send_file(sender, LOYALTY_IMG, "ואם בא לך קבוע — יש חבילה: 4+1 או 3+1 (Private Month)")
+        mark_seen(phone)
+        return
+
+    reply = ask_grok(hist, text)
+    if reply:
+        send(sender, reply)
+    mark_seen(phone)
+
+
 @app.post("/webhook")
-async def webhook(req: Request):
+async def webhook(req: Request, bg: BackgroundTasks):
     body = await req.json()
     if body.get("typeWebhook") != "incomingMessageReceived":
         return {"ok": True}
@@ -212,48 +253,11 @@ async def webhook(req: Request):
     if phone in MUTED:
         return {"ok": True, "muted": True}
 
-    if is_night():
-        if not night_already(phone):
-            if already(phone):
-                send_hours(sender)
-            else:
-                send(sender, WELCOME)
-                send_hours(sender)
-                mark_seen(phone)
-            mark_night(phone)
-        return {"ok": True, "night": True}
-
     msg = body.get("messageData") or {}
     text = (
         ((msg.get("textMessageData") or {}).get("textMessage"))
         or ((msg.get("extendedTextMessageData") or {}).get("text"))
         or ""
     )
-    if not text.strip():
-        return {"ok": True}
-
-    if not already(phone):
-        send(sender, WELCOME)
-        mark_seen(phone)
-        return {"ok": True, "welcome": True}
-
-    hist = history(sender)
-    low = text.lower()
-    if any(w in low for w in ("יציאה", "לצאת", "выезд", "ко мне", "outcall", "не понял", "לא מבין", "???",
-                               "שניים", "שלושה", "זוג", "חברים", "יחד", "двоем", "вдвоем", "троих", "тройнич", "group", "together", "пара")):
-        send(sender, "רגע")
-        send(SUPPORT, f"⚠️ Требует внимания. Чат {phone}\nТекст: {text[:100]}")
-        MUTED.add(phone)
-        return {"ok": True, "support": True}
-
-    if wants_discount(text):
-        send_file(sender, INTRO_IMG, "הנחה אין מותק. יש מחיר היכרות: 10 דק 250 / 15 דק 300")
-        send_file(sender, LOYALTY_IMG, "ואם בא לך קבוע — יש חבילה: 4+1 או 3+1 (Private Month)")
-        mark_seen(phone)
-        return {"ok": True, "discount": True}
-
-    reply = ask_grok(hist, text)
-    if reply:
-        send(sender, reply)
-    mark_seen(phone)
+    bg.add_task(process_message, sender, phone, text)
     return {"ok": True}
