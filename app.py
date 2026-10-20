@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import requests
-from fastapi import BackgroundTasks
+from fastapi import FastAPI, Request, BackgroundTasks
 
 GREEN_BASE = os.environ.get("GREEN_BASE", "https://7107.api.greenapi.com")
 GREEN_ID = os.environ.get("GREEN_ID", "710722744965")
