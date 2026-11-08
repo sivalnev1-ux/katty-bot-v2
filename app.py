@@ -211,6 +211,7 @@ def process_message(sender: str, phone: str, text: str):
 
 @app.post("/webhook")
 async def webhook(req: Request, bg: BackgroundTasks):
+    return {"ok": True, "disabled": True}
     body = await req.json()
     if body.get("typeWebhook") != "incomingMessageReceived":
         return {"ok": True}
