@@ -211,25 +211,22 @@ def process_message(sender: str, phone: str, text: str):
 
 @app.post("/webhook")
 async def webhook(req: Request, bg: BackgroundTasks):
-    return {"ok": True, "disabled": True}
     body = await req.json()
     if body.get("typeWebhook") != "incomingMessageReceived":
         return {"ok": True}
-    if not bot_on():
-        return {"ok": True, "skipped": "paused"}
-
     sender = ((body.get("senderData") or {}).get("chatId")) or ""
     if not sender.endswith("@c.us"):
         return {"ok": True}
     phone = phone_of(sender)
-    if phone in MUTED:
-        return {"ok": True, "muted": True}
-
     msg = body.get("messageData") or {}
     text = (
         ((msg.get("textMessageData") or {}).get("textMessage"))
         or ((msg.get("extendedTextMessageData") or {}).get("text"))
         or ""
     )
-    bg.add_task(process_message, sender, phone, text)
+    name = (body.get("senderData") or {}).get("senderName") or ""
+    ts = datetime.now(timezone(timedelta(hours=3))).isoformat()
+    log_path = Path("/tmp/incoming_log.jsonl")
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"ts": ts, "phone": phone, "name": name, "text": text[:200]}, ensure_ascii=False) + "\n")
     return {"ok": True}
